@@ -11,6 +11,7 @@ contract Pool {
     address poolOwner;
     IERC20 private token; //The input token for the pool campaign usually CRTV
     IERC721 private nft;
+    iRandomNumberGenerator private rng;
     string public poolName; //Brand can call the pool whatever they want IE "Campaing to design the next Coca Cola Bear"
     string public brandName; //Pulled from Twitter handle is not changeable
     uint public funds; //Capital Pool owner deposits to start pool!
@@ -45,13 +46,14 @@ contract Pool {
         _;
     }
     
-    constructor(string memory _poolName, string memory _brandName, uint _capital, address _capitalAddress, address _nftAddress, address _poolOwner, uint _campaignLength, uint _votingLength, uint _decisionLength, uint _submissionLength) {
+    constructor(string memory _poolName, string memory _brandName, uint _capital, address _capitalAddress, address _nftAddress, address _poolOwner, address _rng, uint _campaignLength, uint _votingLength, uint _decisionLength, uint _submissionLength) {
         poolOwner = _poolOwner;
         funds = _capital;
         token = IERC20(_capitalAddress);
         require(token.transferFrom(poolOwner, address(this), funds), "trandferFrom failed, pool not backed by funds!");
         
         nft = IERC721(_nftAddress);
+        rng = iRandomNumberGenerator(_rng);
         
         poolName = _poolName;
         brandName = _brandName;
@@ -125,8 +127,11 @@ contract Pool {
     
     
     function getTopTen() external onlyPoolOwner{
+        require(!topTenFound, "Top Ten Already Calcuated!");
         require(block.number > fanVotingEndBlock, "Cannot select top ten until fan voting is over!");
         //Function goes through all the submissions
+        rng.getRandomNumber(block.number);
+        topTenFound = true;
     }
     
     function selectWinner(uint submissionIndex) external onlyPoolOwner{
@@ -141,4 +146,9 @@ contract Pool {
         //If they are the artist then return the ERC20s and the ERC721s
     }
     
+}
+
+interface iRandomNumberGenerator {
+    function getRandomNumber(uint256 userProvidedSeed) external returns (bytes32 requestId);
+    function seeRandomNumber() external returns(uint);
 }
