@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC721/IERC721.sol";
+//TODO tie breaker logic not implemented
 contract Pool {
     
     address poolOwner;
@@ -17,11 +18,12 @@ contract Pool {
     uint public fanVotingEndBlock;
     uint public brandVotingEndBlock;
     uint public campaignEndBlock;
-    bool public topTenFound = false;
-    uint[10] topTen;
-    uint[10] topTenAmount;
+    bool public topTenFound;
+    uint[10] public topTen;
+    uint[10] public topTenAmount;
     uint winningSubmission; // Index of the winning submission
     uint userDeposit; //
+    bool winnerSelected;
     
     struct User{
         address user;
@@ -73,11 +75,13 @@ contract Pool {
         poolName = _name;
     }
     
-    function createSubmission() external {
+    function createSubmission( uint[3] memory nfts) external {
         require(block.number < submissionEndBlock, "Can not add submissions during the fan voting period");
         require(token.transferFrom(msg.sender, address(this), userDeposit), "trandferFrom failed, submission not backed by funds!");
-        //require collateral is >= 10% of brand deposited funds
-        //require colalteral transfers to contract
+        for(uint i=0; i < 3; i++){
+            nft.transferFrom(msg.sender, address(this), nfts[i]);//Transfer them to the contract Think we need to do a require, we could require the nft owner is the conrtact?
+            submissions[submissionCount]. nftList.push(nfts[i]);
+        }
         User memory artist = User(
             {
                 user: msg.sender,
@@ -87,19 +91,6 @@ contract Pool {
         submissions[submissionCount].userCount++;
         submissions[submissionCount].users.push(artist);
         submissionCount++;
-    }
-    
-    //TODO I'm not sure the best way to do this
-    function bulkAddNFTtoSubmission(uint submissionIndex) external {
-        require(block.number < submissionEndBlock, "Can not add NFTs during the fan voting period");
-        require(msg.sender == submissions[submissionIndex].users[0].user, "Cannot add NFTs to a submission you did not create!");
-    }
-    
-    function addNFTtoSubmission(uint submissionIndex, uint _tokenId) external{
-        require(block.number < submissionEndBlock, "Can not add NFTs during the fan voting period");
-        require(msg.sender == submissions[submissionIndex].users[0].user, "Cannot add NFTs to a submission you did not create!");
-        nft.transferFrom(msg.sender, address(this), _tokenId); //Transfer the NFT to the pool
-        submissions[submissionIndex].nftList.push(_tokenId); //Add the NFT to the list of NFTs
     }
     
     function fanVote(uint _submissionNumber) external onlyFans {
@@ -177,8 +168,10 @@ contract Pool {
     }
     
     function selectWinner(uint submissionIndex) external onlyPoolOwner{
+        require(!winnerSelected, "Already selected winner!");
         require(block.number > campaignEndBlock, "Can only choose a winner after the campaign is over!");
         require(topTenFound, "You have to call getTopTen first!");
+        winnerSelected = true;
         bool winnerInTopTen;
         for (uint i=0; i<10; i++){
             if (submissionIndex == topTen[i]){
@@ -189,14 +182,12 @@ contract Pool {
         require(winnerInTopTen, "You must select a winner from the top ten list!");
         winningSubmission = submissionIndex;
         //distribute awards
-        //TODO send NFT to artist
         nft.transferFrom(address(this), submissions[winningSubmission].users[0].user, submissions[winningSubmission].nftList[0]);
-        //TODO send NFT to lucky fan
         uint winnerIndex = (rng.seeRandomNumber() % (submissions[submissionIndex].userCount-1)) + 1;
         address luckyFan = submissions[submissionIndex].users[winnerIndex].user;
         nft.transferFrom(address(this), luckyFan, submissions[winningSubmission].nftList[1]);
         nft.transferFrom(address(this), poolOwner, submissions[winningSubmission].nftList[2]);
-        //TODO transfer the pool owner back their initial deposit
+        token.transferFrom(address(this), poolOwner, funds);
     }
     
     function cashout(uint _submissionNumber) external {
@@ -214,8 +205,14 @@ contract Pool {
         submissions[_submissionNumber].users[index].amount = 0;
         if (userFound && index == 0){
             //This is an artist that needs to withdraw funds and NFTS
-            //Send back their NFTs if they arent the winner, if they are not sure
+            //Send back their NFTs if they arent the winner, and their funds. If they are the winner then jsut send back the funds
             require(token.transferFrom(address(this), msg.sender, tmpBal));
+            if (_submissionNumber != winningSubmission){
+                for(uint i=0; i < 3; i++){
+                    nft.transferFrom(address(this), msg.sender,  submissions[_submissionNumber].nftList[i]);//Transfer them to the contract Think we need to do a require, we could require the nft owner is the conrtact?
+                }
+                submissions[_submissionNumber].nftList = [0,0,0];//Set the nftList equal to a list of zeroes 
+            }
         }
         
         else if (userFound){
@@ -233,3 +230,4 @@ interface iRandomNumberGenerator {
     function getRandomNumber(uint256 userProvidedSeed) external returns (bytes32 requestId);
     function seeRandomNumber() external returns(uint);
 }
+
