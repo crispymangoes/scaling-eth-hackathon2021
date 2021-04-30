@@ -5,6 +5,9 @@ import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contr
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC721/IERC721.sol";
 //TODO tie breaker logic not implemented
+//TODO instead of distributing rewards, there should be a new settling contract created where the artist and brand can have a back and forth over the design of the final NFT
+//This contract would pay out the rewards
+//TODO add support for another ERC20 token that can be used aas a pirxe pool for first second and third submissions
 contract Pool {
     
     address poolOwner;
@@ -21,9 +24,14 @@ contract Pool {
     bool public topTenFound;
     uint[10] public topTen;
     uint[10] public topTenAmount;
+    uint[] finalists;
+    uint[] finalistsAmounts;
     uint winningSubmission; // Index of the winning submission
     uint userDeposit; //
     bool winnerSelected;
+    uint searchIndex; //stores the last index that was cheked for top ten calcualtion
+    bool checkedForTies;
+    uint finalistsCount;
     
     struct User{
         address user;
@@ -35,7 +43,6 @@ contract Pool {
         mapping(address => uint) userIndex;
         User[] users; //should I make fan zero be the artist? then I can keep their address and 
         uint userCount;
-        uint totalVote;
     }
     
     mapping(uint => submission) submissions;
@@ -118,27 +125,26 @@ contract Pool {
         
     }
     
-    
+    //TODO could add a check that if submissionCount is <= 10, just make the finalists == to the submissions
     function getTopTen() external onlyPoolOwner{
-        require(!topTenFound, "Top Ten Already Calcuated!");
+        require(searchIndex < submissionCount, "Already found top ten from all submissions!");
         require(block.number > fanVotingEndBlock, "Cannot select top ten until fan voting is over!");
-        //Function goes through all the submissions
         uint smallStake; //The submission with the smallest amount in the top ten. This is that small amount
         uint indexSmall; //The index of the submission with the smallest amount in the top ten
         uint submissionSum; // Used to add up the total vote count for a submission
         bool spotFound; //Bool used to determine if the smallest top ten submission needs to be compared to the current submission vote sum
-        for (uint i=0; i<submissionCount; i++){
-            submissionSum = 0;
+        
+        while (gasleft() > 100 && searchIndex < submissionCount){
+
+            submissionSum = (submissions[searchIndex].userCount - 1) * userDeposit;
             spotFound = false;
-            for ( uint j=1; j < submissions[i].userCount; j++){
-                submissionSum = submissionSum + submissions[i].users[j].amount;
-            }
+        
             smallStake = topTenAmount[0];
             indexSmall = 0;
             for ( uint k=0; k < 10; k++){
                 if (topTenAmount[k] == 0){
                     topTenAmount[k] = submissionSum;
-                    topTen[k] = i;
+                    topTen[k] = searchIndex;
                     spotFound = true;
                     break;
                 }
@@ -153,28 +159,52 @@ contract Pool {
                 if (submissionSum > smallStake){
                     //If it is then write over the small submission with the current submission
                     topTenAmount[indexSmall] = submissionSum;
-                    topTen[indexSmall] = i;
+                    topTen[indexSmall] = searchIndex;
                 }
             }
-            submissions[i].totalVote = submissionSum;
         }
-        //TODO in order to handle tie breakers, scan through the top ten and find the smallest value. If you find the smallest value multiple times, record how many times that happens.
-        // Then that number is how many spots in the top ten are up for grabs in a tiebreaker.
-        // Now scan through all the submissions again and count how many submissions have the same total vote(total vote being equal to smallest value in the top ten)
-        // If this number is the same as the number you found when searching in the top ten you are gucci, if it isn't then a tie breaker voting period needs to start.
+        searchIndex = searchIndex + 1;
         rng.getRandomNumber(block.number);
         topTenFound = true;
         
+    }
+
+    function checkForTies() external onlyPoolOwner {
+        require(topTenFound, "Need to run getTopTen first!");
+        require(!checkedForTies, "Already checked for ties");
+        
+        uint smallStake = topTenAmount[0];
+        uint indexSmall = 0;
+        for (uint i=0; i<10; i++){
+            if (topTenAmount[i] < smallStake){
+                smallStake = topTenAmount[i];
+                indexSmall = i;
+                finalists.push(topTen[i]);
+                finalistsAmounts.push(topTenAmount[i]);
+                finalistsCount++;
+            }
+        }
+        uint tmpAmount;
+        for (uint i=0; i<submissionCount; i++){
+            tmpAmount = (submissions[i].userCount-1)*userDeposit;
+            if (smallStake == tmpAmount){
+                finalists.push(i);
+                finalistsAmounts.push(tmpAmount);
+                finalistsCount++;
+            }
+            
+        }
+        checkedForTies = true;
     }
     
     function selectWinner(uint submissionIndex) external onlyPoolOwner{
         require(!winnerSelected, "Already selected winner!");
         require(block.number > campaignEndBlock, "Can only choose a winner after the campaign is over!");
-        require(topTenFound, "You have to call getTopTen first!");
+        require(checkedForTies, "You have to call checForTies first!");
         winnerSelected = true;
         bool winnerInTopTen;
-        for (uint i=0; i<10; i++){
-            if (submissionIndex == topTen[i]){
+        for (uint i=0; i<finalistsCount; i++){
+            if (submissionIndex == finalists[i]){
                 winnerInTopTen = true;
                 break;
             }
