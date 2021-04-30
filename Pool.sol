@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC721/IERC721.sol";
-//TODO tie breaker logic not implemented
+
 //TODO instead of distributing rewards, there should be a new settling contract created where the artist and brand can have a back and forth over the design of the final NFT
 //This contract would pay out the rewards
 //TODO add support for another ERC20 token that can be used aas a pirxe pool for first second and third submissions
